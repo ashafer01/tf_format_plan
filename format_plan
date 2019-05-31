@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+
+import json
+import re
+import shutil
+import sys
+from json.decoder import JSONDecodeError
+
+term_cols, term_lines = shutil.get_terminal_size((99999, 100))
+
+for line in sys.stdin:
+  m = re.match(r'^(?:\x1b\[0m)(\s*)([a-zA-Z0-9_]+): \"(.+)', line.rstrip())
+  if m:
+    try:
+      before, after = m.group(3).rstrip(' \n"').replace('\\n', '\n').split('" => "')
+    except ValueError:
+      sys.stdout.write(line)
+      continue
+    whitespace_prefix = m.group(1)
+    attr_name = m.group(2)
+
+    before = before.replace(r'\"', '"')
+    try:
+      before = json.loads(before)
+      before = json.dumps(before, indent=2, sort_keys=True)
+      before_lines = before.splitlines()
+      before_is_json = True
+    except JSONDecodeError:
+      before_lines = [before]
+      before_is_json = False
+
+    before_max_len = 0
+    for jl in before_lines:
+      ll = len(jl.rstrip())
+      if ll > before_max_len:
+        before_max_len = ll
+
+    after = after.replace(r'\"', '"')
+    try:
+      after = json.loads(after)
+      after = json.dumps(after, indent=2, sort_keys=True)
+      after_lines = after.splitlines()
+      after_is_json = True
+    except JSONDecodeError:
+      after_lines = [after]
+      after_is_json = False
+
+    if not before_is_json and not after_is_json:
+      sys.stdout.write(line)
+      continue
+
+    line_fmt = '{0}{1:<%s} | {2}' % (before_max_len,)
+
+    lines = max(len(before_lines), len(after_lines))
+    for i in range(lines):
+      if i == 0:
+        print('\x1b[0m' + whitespace_prefix + attr_name + ':  <JSON blob changed>')
+      try:
+        before_side = before_lines[i].rstrip()
+      except IndexError:
+        before_side = ''
+      try:
+        after_side = after_lines[i].rstrip()
+      except IndexError:
+        after_side = ''
+      before_side = before_side.rstrip()
+      after_side = after_side.rstrip()
+      out_line = line_fmt.format(whitespace_prefix, before_side, after_side)
+      if len(out_line) > term_cols:
+        out_line = out_line[:term_cols - 4]
+        out_line += ' ...'
+      print(out_line)
+  else:
+    sys.stdout.write(line)
